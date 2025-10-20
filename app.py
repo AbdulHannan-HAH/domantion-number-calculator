@@ -1,0 +1,206 @@
+import matplotlib
+matplotlib.use('Agg')
+from flask import Flask, request, jsonify, send_file, render_template
+from io import BytesIO
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+from graph_module import (
+    generate_semigroup,
+    build_gap_graph,
+    perfect_circle_layout,
+    domination_number
+)
+
+app = Flask(__name__, template_folder='templates')
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    data = request.get_json()
+    generators = sorted(set(data.get("generators", [])))
+
+    try:
+        # Generate gap graph
+        G, gaps, S = build_gap_graph(generators)
+        
+        # Compute domination number
+        D, gamma = domination_number(G)
+
+        result = {
+            "generators": generators,
+            "gaps": gaps,
+            "num_nodes": len(gaps),
+            "num_edges": G.number_of_edges(),
+            "domination_number": gamma,
+            "dominating_set": sorted(D),
+            "sample_semigroup": sorted(list(S))[:20]  # First 20 elements
+        }
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/plot", methods=["POST"])
+def plot_graph():
+    data = request.get_json()
+    generators = sorted(set(data.get("generators", [])))
+
+    try:
+        # Generate gap graph
+        G, gaps, S = build_gap_graph(generators)
+        
+        # Compute domination number
+        D, gamma = domination_number(G)
+        
+        # Create layout and plot
+        pos = perfect_circle_layout(G)
+        n = len(G.nodes())
+        size = max(300, int(800 / np.sqrt(n)))  # adaptive node size
+
+        plt.figure(figsize=(10, 8))
+        
+        # Draw nodes with different colors for dominating set
+        node_colors = ['orange' if node in D else 'skyblue' for node in G.nodes()]
+        nx.draw_networkx_nodes(
+            G, pos,
+            node_color=node_colors,
+            node_size=size,
+            edgecolors='black',
+            linewidths=1.5
+        )
+        
+        # Draw edges and labels
+        nx.draw_networkx_edges(G, pos, alpha=0.7, edge_color='gray')
+        nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold')
+
+        plt.title(f"Gap Graph for S = <{', '.join(map(str, generators))}>\nDomination Number γ(G) = {gamma}")
+        plt.axis('off')
+        plt.tight_layout()
+
+        buf = BytesIO()
+        plt.savefig(buf, format="png", dpi=150)
+        plt.close()
+        buf.seek(0)
+
+        return send_file(buf, mimetype="image/png")
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/chatbot", methods=["POST"])
+def chatbot():
+    data = request.get_json()
+    user_msg = data.get("message", "").lower()
+
+    # Comprehensive responses for Gap Graph Domination
+    if any(word in user_msg for word in ["domination", "gamma", "γ", "dominating"]):
+        response = (
+            "Domination Number (γ(G)):\n"
+            "1. Minimum size of a dominating set\n"
+            "2. A set D where every node not in D has at least one neighbor in D\n"
+            "3. Measures how many 'guardians' needed to cover all nodes\n"
+            "4. For gap graphs, shows structural coverage\n"
+            "5. Computed using exact search (small graphs) + greedy (large graphs)"
+        )
+    
+    elif any(word in user_msg for word in ["gap", "gaps"]):
+        response = (
+            "Gaps in Numerical Semigroups:\n"
+            "1. Numbers not representable as linear combinations of generators\n"
+            "2. Form vertices/nodes of the gap graph\n"
+            "3. Example: For <3,5>, gaps are {1,2,4,7}\n"
+            "4. The largest gap is called the Frobenius number\n"
+            "5. Gap count = genus of the semigroup"
+        )
+    
+    elif any(word in user_msg for word in ["edge", "edges", "rule"]):
+        response = (
+            "Edge Rule in Gap Graphs:\n"
+            "1. Connect two gaps a and b if |a - b| ∈ S (belongs to semigroup)\n"
+            "2. Represents distance relationships\n"
+            "3. Example: If |4-7|=3 ∈ S, then edge between gaps 4 and 7\n"
+            "4. Edge density affects domination number"
+        )
+    
+    elif any(word in user_msg for word in ["graph", "structure"]):
+        response = (
+            "Gap Graph Properties:\n"
+            "1. Vertices = gaps of the numerical semigroup\n"
+            "2. Edges = {(a,b) | |a-b| ∈ S}\n"
+            "3. Undirected simple graph\n"
+            "4. Perfect circular layout for visualization\n"
+            "5. Domination number measures coverage efficiency"
+        )
+    
+    elif any(word in user_msg for word in ["semigroup", "numerical"]):
+        response = (
+            "Numerical Semigroups:\n"
+            "1. Additive submonoids of ℕ with finite complement\n"
+            "2. Generated by coprime positive integers\n"
+            "3. Example: <3,5> = {0,3,5,6,8,9,10,...}\n"
+            "4. Applications in algebraic geometry and coding theory"
+        )
+    
+    elif any(word in user_msg for word in ["layout", "circle", "visual"]):
+        response = (
+            "Graph Visualization:\n"
+            "1. Perfect circular layout for all graphs\n"
+            "2. Nodes evenly spaced on unit circle\n"
+            "3. Orange nodes = dominating set\n"
+            "4. Blue nodes = other gaps\n"
+            "5. Adaptive node sizing based on graph size"
+        )
+    
+    elif any(word in user_msg for word in ["algorithm", "compute", "calculation"]):
+        response = (
+            "Domination Algorithm:\n"
+            "1. Small graphs (≤14 nodes): Exact brute-force search\n"
+            "2. Large graphs (>14 nodes): Greedy approximation\n"
+            "3. Greedy picks node covering most uncovered nodes\n"
+            "4. Efficient for practical gap graph sizes"
+        )
+    
+    elif any(word in user_msg for word in ["application", "use", "practical"]):
+        response = (
+            "Applications of Domination:\n"
+            "1. Network design - placing servers/routers\n"
+            "2. Social networks - identifying influencers\n"
+            "3. Facility location problems\n"
+            "4. Wireless sensor networks\n"
+            "5. Emergency service placement"
+        )
+    
+    elif any(word in user_msg for word in ["generator", "input"]):
+        response = (
+            "Generator Requirements:\n"
+            "1. Positive integers (e.g., 3,5 or 4,7,9)\n"
+            "2. Should be coprime for nontrivial gaps\n"
+            "3. Typical examples: <3,5>, <4,7>, <6,9,20>\n"
+            "4. Larger generators produce more complex graphs"
+        )
+    
+    elif any(word in user_msg for word in ["hi", "hello", "how are you"]):
+        response = "Hello! I can explain Domination Numbers, Gap Graphs, Numerical Semigroups, and related concepts. What would you like to know?"
+    
+    else:
+        response = (
+            "I can explain these topics:\n"
+            "1. Domination Number (γ)\n"
+            "2. Gap properties and examples\n"
+            "3. Edge formation rules\n"
+            "4. Graph structure and visualization\n"
+            "5. Numerical semigroup theory\n"
+            "6. Computation algorithms\n"
+            "7. Real-world applications\n"
+            "Ask me anything about gap graph domination!"
+        )
+
+    return jsonify({"response": response})
+
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
